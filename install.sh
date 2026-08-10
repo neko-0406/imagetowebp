@@ -9,7 +9,7 @@
 
 set -e
 
-REPO="<owner>/imagetowebp"
+REPO="neko-0406/imagetowebp"
 BINARY="imagetowebp"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 RELEASE_URL="https://github.com/${REPO}/releases/download/latest"

@@ -9,7 +9,7 @@
 
 $ErrorActionPreference = "Stop"
 
-$Repo = "<owner>/imagetowebp"
+$Repo = "neko-0406/imagetowebp"
 $BinaryName = "imagetowebp.exe"
 $AssetName = "imagetowebp-windows-x86_64.exe"
 $ReleaseUrl = "https://github.com/$Repo/releases/download/latest/$AssetName"

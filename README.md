@@ -1,7 +1,7 @@
 # imagetowebp 🖼️⚡
 
-[![CI](https://github.com/<owner>/imagetowebp/actions/workflows/ci.yml/badge.svg)](https://github.com/<owner>/imagetowebp/actions/workflows/ci.yml)
-[![Release](https://github.com/<owner>/imagetowebp/actions/workflows/release.yml/badge.svg)](https://github.com/<owner>/imagetowebp/actions/workflows/release.yml)
+[![CI](https://github.com/neko-0406/imagetowebp/actions/workflows/ci.yml/badge.svg)](https://github.com/neko-0406/imagetowebp/actions/workflows/ci.yml)
+[![Release](https://github.com/neko-0406/imagetowebp/actions/workflows/release.yml/badge.svg)](https://github.com/neko-0406/imagetowebp/actions/workflows/release.yml)
 
 ブログ掲載用の画像 (JPG, PNG, BMP, TIFF等) を堅牢かつ高速に WebP 形式へ変換する Rust 製 CLI ツールです。
 
@@ -12,33 +12,33 @@
 ### Linux (x86_64)
 ```bash
 # 新規インストール・更新（同じコマンドで更新も可）
-curl -fsSL https://raw.githubusercontent.com/<owner>/imagetowebp/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/neko-0406/imagetowebp/main/install.sh | sh
 ```
 
 または手動でダウンロード:
 ```bash
-curl -L https://github.com/<owner>/imagetowebp/releases/download/latest/imagetowebp-linux-x86_64 \
+curl -L https://github.com/neko-0406/imagetowebp/releases/download/latest/imagetowebp-linux-x86_64 \
   -o imagetowebp && chmod +x imagetowebp && sudo mv imagetowebp /usr/local/bin/
 ```
 
 ### Windows (PowerShell)
 ```powershell
 # 新規インストール・更新（同じコマンドで更新も可）
-irm https://raw.githubusercontent.com/<owner>/imagetowebp/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/neko-0406/imagetowebp/main/install.ps1 | iex
 ```
 
 または手動でダウンロード:
 ```powershell
-Invoke-WebRequest -Uri "https://github.com/<owner>/imagetowebp/releases/download/latest/imagetowebp-windows-x86_64.exe" `
+Invoke-WebRequest -Uri "https://github.com/neko-0406/imagetowebp/releases/download/latest/imagetowebp-windows-x86_64.exe" `
   -OutFile "$env:USERPROFILE\imagetowebp.exe"
 ```
 
 ### ソースからビルド（Cargo）
 ```bash
-cargo install --git https://github.com/<owner>/imagetowebp
+cargo install --git https://github.com/neko-0406/imagetowebp
 
 # 更新時
-cargo install --git https://github.com/<owner>/imagetowebp --force
+cargo install --git https://github.com/neko-0406/imagetowebp --force
 ```
 
 ---
