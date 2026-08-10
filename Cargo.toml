@@ -1,0 +1,17 @@
+[package]
+name = "imagetowebp"
+version = "0.1.0"
+edition = "2021"
+authors = ["sater"]
+description = "A fast and robust CLI tool to convert blog images (JPG, PNG, etc.) to WebP format with parallel processing."
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+image = "0.24"
+webp = "0.2"
+rayon = "1.8"
+indicatif = "0.17"
+colored = "2.1"
+walkdir = "2.4"
+anyhow = "1.0"
+dialoguer = "0.11"
