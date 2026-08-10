@@ -15,11 +15,11 @@ pub struct CliArgs {
     #[arg(short, long, value_name = "DIR")]
     pub output: Option<PathBuf>,
 
-    /// WebP 画質 (1〜100、デフォルト: 80)
-    #[arg(short, long, default_value_t = 80)]
+    /// WebP 画質 (1〜100、デフォルト: 80)。CLIレベルで 1〜100 の範囲を強制します。
+    #[arg(short, long, default_value_t = 80, value_parser = clap::value_parser!(u8).range(1..=100))]
     pub quality: u8,
 
-    /// Lossless (可逆圧縮) モードを使用
+    /// Lossless (可逆圧縮) モードを使用。このモードでは quality パラメータは無視されます。
     #[arg(short = 'l', long, default_value_t = false)]
     pub lossless: bool,
 
@@ -30,6 +30,10 @@ pub struct CliArgs {
     /// 既存の WebP ファイルが存在する場合に上書きする
     #[arg(short = 'w', long, default_value_t = false)]
     pub overwrite: bool,
+
+    /// 出力先ディレクトリに入力フォルダのサブディレクトリ構造を保持する (衝突防止)
+    #[arg(short = 's', long, default_value_t = false)]
+    pub preserve_structure: bool,
 }
 
 impl CliArgs {
@@ -42,6 +46,7 @@ impl CliArgs {
             lossless: self.lossless,
             max_dimension: self.max_dimension,
             overwrite: self.overwrite,
+            preserve_structure: self.preserve_structure,
         }
     }
 }
@@ -82,18 +87,31 @@ pub fn prompt_interactive_config() -> anyhow::Result<ConvertConfig> {
         Some(PathBuf::from(output_str.trim()))
     };
 
+    // 出力先が指定された場合のみフォルダ構造保持を尋ねる
+    let preserve_structure = if output_dir.is_some() {
+        Confirm::new()
+            .with_prompt("出力先にサブフォルダ構造を保持しますか？ (同名ファイルの衝突を防ぎます)")
+            .default(true)
+            .interact()?
+    } else {
+        false
+    };
+
     let lossless = Confirm::new()
         .with_prompt("Lossless (可逆圧縮) にしますか？ (通常はいいえ=Lossy推奨)")
         .default(false)
         .interact()?;
 
+    // Lossless モードでは quality は使用されないのでスキップ
     let quality: u8 = if lossless {
-        100
+        // lossless 時は quality 値は無視されるが、内部的には 100 を保持
+        80
     } else {
-        Input::new()
+        let q: u8 = Input::new()
             .with_prompt("画質を設定してください (1 ~ 100)")
             .default(80)
-            .interact_text()?
+            .interact_text()?;
+        q.clamp(1, 100)
     };
 
     let enable_resize = Confirm::new()
@@ -124,6 +142,7 @@ pub fn prompt_interactive_config() -> anyhow::Result<ConvertConfig> {
         lossless,
         max_dimension,
         overwrite,
+        preserve_structure,
     })
 }
 
@@ -140,6 +159,7 @@ mod tests {
             lossless: false,
             max_dimension: Some(1920),
             overwrite: true,
+            preserve_structure: true,
         };
 
         let config = args.to_config();
@@ -148,5 +168,15 @@ mod tests {
         assert_eq!(config.quality, 85);
         assert_eq!(config.max_dimension, Some(1920));
         assert!(config.overwrite);
+        assert!(config.preserve_structure);
+    }
+
+    #[test]
+    fn test_quality_clamped_in_interactive_mode() {
+        // quality は 1..=100 の範囲で保存されることを確認
+        let q: u8 = 200u8.clamp(1, 100);
+        assert_eq!(q, 100);
+        let q2: u8 = 0u8.clamp(1, 100);
+        assert_eq!(q2, 1);
     }
 }

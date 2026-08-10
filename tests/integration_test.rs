@@ -15,6 +15,7 @@ fn create_sample_png(path: &std::path::Path, width: u32, height: u32) {
     img.save(path).unwrap();
 }
 
+/// 基本的なエンドツーエンド変換テスト（破損ファイル耐性・リサイズ・出力先指定を検証）
 #[test]
 fn test_end_to_end_conversion_directory_and_file() {
     let dir = tempdir().unwrap();
@@ -42,6 +43,7 @@ fn test_end_to_end_conversion_directory_and_file() {
         lossless: false,
         max_dimension: Some(200),
         overwrite: true,
+        preserve_structure: false,
     };
 
     let summary = process_images(&config).unwrap();
@@ -59,4 +61,67 @@ fn test_end_to_end_conversion_directory_and_file() {
     let converted1 = image::open(out_dir.join("image1.webp")).unwrap();
     assert_eq!(converted1.width(), 200);
     assert_eq!(converted1.height(), 200);
+}
+
+/// preserve_structure オプションのテスト
+/// サブフォルダ構造が出力先に保持されることを確認する
+#[test]
+fn test_preserve_structure_keeps_subfolder() {
+    let dir = tempdir().unwrap();
+    let sub_dir = dir.path().join("blog");
+    std::fs::create_dir_all(&sub_dir).unwrap();
+
+    let img1 = dir.path().join("top.png");
+    let img2 = sub_dir.join("post.png");
+
+    create_sample_png(&img1, 100, 100);
+    create_sample_png(&img2, 100, 100);
+
+    let out_dir = dir.path().join("output");
+
+    let config = ConvertConfig {
+        input_paths: vec![dir.path().to_path_buf()],
+        output_dir: Some(out_dir.clone()),
+        quality: 80,
+        lossless: false,
+        max_dimension: None,
+        overwrite: true,
+        preserve_structure: true,
+    };
+
+    let summary = process_images(&config).unwrap();
+
+    assert_eq!(summary.success_count, 2);
+
+    // サブフォルダ構造が保持されていること
+    assert!(out_dir.join("top.webp").exists(), "トップレベルのwebpが存在すること");
+    assert!(out_dir.join("blog").join("post.webp").exists(), "サブフォルダ構造が保持されること");
+}
+
+/// WebP ファイルが変換対象から除外されることを確認するテスト
+#[test]
+fn test_webp_files_are_not_reconverted() {
+    let dir = tempdir().unwrap();
+
+    let png_file = dir.path().join("original.png");
+    let webp_file = dir.path().join("already_converted.webp");
+
+    create_sample_png(&png_file, 50, 50);
+    // ダミーのwebpファイル（実際にはPNGだがここでは名前で除外確認）
+    let mut f = File::create(&webp_file).unwrap();
+    f.write_all(b"dummy webp content").unwrap();
+
+    let config = ConvertConfig {
+        input_paths: vec![dir.path().to_path_buf()],
+        output_dir: None,
+        quality: 80,
+        overwrite: false,
+        preserve_structure: false,
+        ..Default::default()
+    };
+
+    let summary = process_images(&config).unwrap();
+
+    // .webp ファイルは除外されるので total_files = 1 になるはず
+    assert_eq!(summary.total_files, 1);
 }

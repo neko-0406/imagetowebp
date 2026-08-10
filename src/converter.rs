@@ -33,8 +33,15 @@ impl ConversionResult {
 }
 
 /// 単一の画像ファイルを WebP に変換するコア関数
+///
+/// # Arguments
+/// - `input_path` - 変換元ファイルパス
+/// - `input_root` - フォルダ構造保持のための基底ディレクトリ（`preserve_structure` 有効時に使用）
+/// - `output_dir` - 出力先ディレクトリ（None の場合は元画像と同じ場所に出力）
+/// - `config` - 変換設定
 pub fn convert_single_image(
     input_path: &Path,
+    input_root: Option<&Path>,
     output_dir: Option<&Path>,
     config: &ConvertConfig,
 ) -> Result<ConversionResult> {
@@ -48,7 +55,7 @@ pub fn convert_single_image(
     let original_size_bytes = metadata.len();
 
     // 出力先パスの決定
-    let output_path = determine_output_path(input_path, output_dir)?;
+    let output_path = determine_output_path(input_path, input_root, output_dir, config.preserve_structure)?;
 
     // 上書きチェック
     if output_path.exists() && !config.overwrite {
@@ -78,6 +85,7 @@ pub fn convert_single_image(
     let processed_img = resize_if_needed(img, config.max_dimension);
 
     // WebP エンコード
+    // 注意: lossless = true の場合、quality パラメータは使用されません
     let webp_data: WebPMemory = encode_to_webp(&processed_img, config)?;
 
     // ファイル書き込み
@@ -98,7 +106,17 @@ pub fn convert_single_image(
 }
 
 /// 出力ファイルのパスを決定する
-fn determine_output_path(input_path: &Path, output_dir: Option<&Path>) -> Result<PathBuf> {
+///
+/// `preserve_structure = true` かつ `output_dir` と `input_root` が両方指定されている場合は、
+/// input_path の input_root からの相対パスを output_dir 配下に再現する。
+/// 例: input_root=./images, input_path=./images/blog/header.png, output_dir=./out
+///     → ./out/blog/header.webp
+fn determine_output_path(
+    input_path: &Path,
+    input_root: Option<&Path>,
+    output_dir: Option<&Path>,
+    preserve_structure: bool,
+) -> Result<PathBuf> {
     let file_stem = input_path
         .file_stem()
         .ok_or_else(|| anyhow!("Invalid file name: {:?}", input_path))?;
@@ -106,8 +124,20 @@ fn determine_output_path(input_path: &Path, output_dir: Option<&Path>) -> Result
     file_name.push(".webp");
 
     if let Some(out_dir) = output_dir {
+        if preserve_structure {
+            if let Some(root) = input_root {
+                // 入力ファイルの root からの相対パスを求め、output_dir 配下に構造を再現
+                if let Ok(relative) = input_path.strip_prefix(root) {
+                    let relative_dir = relative.parent().unwrap_or_else(|| Path::new(""));
+                    let out_path = out_dir.join(relative_dir).join(file_name);
+                    return Ok(out_path);
+                }
+            }
+        }
+        // preserve_structure 無効、または root からの相対パスが取れない場合は flat に出力
         Ok(out_dir.join(file_name))
     } else {
+        // 出力先未指定: 元ファイルと同じディレクトリ
         let parent = input_path.parent().unwrap_or_else(|| Path::new(""));
         Ok(parent.join(file_name))
     }
@@ -125,6 +155,9 @@ fn resize_if_needed(img: DynamicImage, max_dimension: Option<u32>) -> DynamicIma
 }
 
 /// WebP へエンコードする
+///
+/// `config.lossless = true` の場合は品質パラメータを無視して可逆エンコードを行う。
+/// `config.lossless = false` の場合は `config.quality` (1..=100) を使用する。
 fn encode_to_webp(img: &DynamicImage, config: &ConvertConfig) -> Result<WebPMemory> {
     let encoder = Encoder::from_image(img)
         .map_err(|e| anyhow!("Failed to create WebP encoder from image: {}", e))?;
@@ -166,7 +199,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = convert_single_image(&input_path, None, &config).unwrap();
+        let result = convert_single_image(&input_path, None, None, &config).unwrap();
 
         assert!(!result.was_skipped);
         assert!(result.output_path.exists());
@@ -187,7 +220,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = convert_single_image(&input_path, None, &config).unwrap();
+        let result = convert_single_image(&input_path, None, None, &config).unwrap();
         assert!(result.output_path.exists());
 
         // 変換後の画像を読み込んでサイズ確認 (400x200 -> 200x100 になるはず)
@@ -210,11 +243,30 @@ mod tests {
         };
 
         // 1回目の変換
-        let res1 = convert_single_image(&input_path, None, &config).unwrap();
+        let res1 = convert_single_image(&input_path, None, None, &config).unwrap();
         assert!(!res1.was_skipped);
 
         // 2回目の変換 (上書きなしなのでスキップされる)
-        let res2 = convert_single_image(&input_path, None, &config).unwrap();
+        let res2 = convert_single_image(&input_path, None, None, &config).unwrap();
         assert!(res2.was_skipped);
+    }
+
+    #[test]
+    fn test_preserve_structure_output_path() {
+        let root = Path::new("/images");
+        let input = Path::new("/images/blog/header.png");
+        let out_dir = Path::new("/out");
+
+        let result = determine_output_path(input, Some(root), Some(out_dir), true).unwrap();
+        assert_eq!(result, PathBuf::from("/out/blog/header.webp"));
+    }
+
+    #[test]
+    fn test_flat_output_path_without_preserve_structure() {
+        let input = Path::new("/images/blog/header.png");
+        let out_dir = Path::new("/out");
+
+        let result = determine_output_path(input, None, Some(out_dir), false).unwrap();
+        assert_eq!(result, PathBuf::from("/out/header.webp"));
     }
 }

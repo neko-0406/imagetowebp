@@ -13,7 +13,8 @@ use crate::config::ConvertConfig;
 use crate::converter::convert_single_image;
 
 /// 対応する画像拡張子一覧 (小文字)
-const SUPPORTED_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "bmp", "tiff", "webp"];
+/// 注意: .webp は変換済み成果物のため意図的に除外しています
+const SUPPORTED_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "bmp", "tiff"];
 
 /// 全体の処理結果サマリー
 #[derive(Debug, Default)]
@@ -77,36 +78,37 @@ impl ProcessSummary {
     }
 }
 
-/// 入力パス（ファイル/フォルダの混在）から対象画像パスを収集・重複排除する
-pub fn collect_image_files(input_paths: &[PathBuf]) -> Vec<PathBuf> {
-    let mut unique_paths = HashSet::new();
+/// 入力パス（ファイル/フォルダの混在）から対象画像パスを収集・重複排除する。
+/// 戻り値は (ファイルパス, 基底ルートパス) のタプルのリスト。
+/// 基底ルートは preserve_structure 使用時に相対パスを解決するために必要。
+pub fn collect_image_files(input_paths: &[PathBuf]) -> Vec<(PathBuf, Option<PathBuf>)> {
+    let mut unique_paths: HashSet<PathBuf> = HashSet::new();
+    let mut results: Vec<(PathBuf, Option<PathBuf>)> = Vec::new();
 
     for path in input_paths {
         if path.is_file() {
             if is_supported_image(path) {
-                if let Ok(canonical) = path.canonicalize() {
-                    unique_paths.insert(canonical);
-                } else {
-                    unique_paths.insert(path.clone());
+                let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+                if unique_paths.insert(canonical.clone()) {
+                    results.push((canonical, None));
                 }
             }
         } else if path.is_dir() {
+            let root = path.canonicalize().unwrap_or_else(|_| path.clone());
             for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
                 let p = entry.path();
                 if p.is_file() && is_supported_image(p) {
-                    if let Ok(canonical) = p.canonicalize() {
-                        unique_paths.insert(canonical);
-                    } else {
-                        unique_paths.insert(p.to_path_buf());
+                    let canonical = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+                    if unique_paths.insert(canonical.clone()) {
+                        results.push((canonical, Some(root.clone())));
                     }
                 }
             }
         }
     }
 
-    let mut result: Vec<PathBuf> = unique_paths.into_iter().collect();
-    result.sort();
-    result
+    results.sort_by(|a, b| a.0.cmp(&b.0));
+    results
 }
 
 /// 対応する画像拡張子かどうかをチェック
@@ -149,7 +151,7 @@ pub fn process_images(config: &ConvertConfig) -> Result<ProcessSummary> {
     let converted_total_bytes = AtomicU64::new(0);
 
     // Rayon による並列変換
-    image_files.par_iter().for_each(|file_path| {
+    image_files.par_iter().for_each(|(file_path, input_root)| {
         let file_name = file_path
             .file_name()
             .and_then(|n| n.to_str())
@@ -157,7 +159,12 @@ pub fn process_images(config: &ConvertConfig) -> Result<ProcessSummary> {
 
         pb.set_message(format!("変換中: {}", file_name));
 
-        match convert_single_image(file_path, config.output_dir.as_deref(), config) {
+        match convert_single_image(
+            file_path,
+            input_root.as_deref(),
+            config.output_dir.as_deref(),
+            config,
+        ) {
             Ok(res) => {
                 original_total_bytes.fetch_add(res.original_size_bytes, Ordering::Relaxed);
                 converted_total_bytes.fetch_add(res.converted_size_bytes, Ordering::Relaxed);
@@ -204,10 +211,13 @@ mod tests {
         let file1 = dir.path().join("img1.png");
         let file2 = dir.path().join("img2.JPG");
         let file_txt = dir.path().join("notes.txt");
+        // .webp は変換対象外であることを確認
+        let file_webp = dir.path().join("already.webp");
 
         File::create(&file1).unwrap();
         File::create(&file2).unwrap();
         File::create(&file_txt).unwrap();
+        File::create(&file_webp).unwrap();
 
         let sub_dir = dir.path().join("subdir");
         std::fs::create_dir(&sub_dir).unwrap();
@@ -217,7 +227,17 @@ mod tests {
         // フォルダとファイルを混在指定
         let collected = collect_image_files(&[dir.path().to_path_buf(), file1.clone()]);
 
-        // img1, img2, img3 の合計 3 個が収集されるはず（ファイル重複は排除）
+        // img1, img2, img3 の合計 3 個が収集されるはず（.webp・.txt・重複は排除）
         assert_eq!(collected.len(), 3);
+    }
+
+    #[test]
+    fn test_webp_files_are_excluded() {
+        let dir = tempdir().unwrap();
+        let webp_file = dir.path().join("converted.webp");
+        File::create(&webp_file).unwrap();
+
+        let collected = collect_image_files(&[dir.path().to_path_buf()]);
+        assert!(collected.is_empty(), ".webp ファイルは変換対象に含まれてはいけない");
     }
 }
