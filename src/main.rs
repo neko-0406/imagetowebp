@@ -1,6 +1,7 @@
 use clap::Parser;
 use imagetowebp::cli::{CliArgs, prompt_interactive_config};
 use imagetowebp::config::ConvertConfig;
+use imagetowebp::processor::process_images;
 
 fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
@@ -13,6 +14,8 @@ fn main() -> anyhow::Result<()> {
 
     config.validate().map_err(|e| anyhow::anyhow!(e))?;
 
-    println!("Config loaded successfully: {:?}", config);
+    let summary = process_images(&config)?;
+    summary.print();
+
     Ok(())
 }
