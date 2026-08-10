@@ -419,6 +419,7 @@ dependencies = [
  "image",
  "indicatif",
  "rayon",
+ "tempfile",
  "walkdir",
  "webp",
 ]

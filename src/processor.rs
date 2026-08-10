@@ -10,7 +10,7 @@ use rayon::prelude::*;
 use walkdir::WalkDir;
 
 use crate::config::ConvertConfig;
-use crate::converter::{convert_single_image, ConversionResult};
+use crate::converter::convert_single_image;
 
 /// 対応する画像拡張子一覧 (小文字)
 const SUPPORTED_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "bmp", "tiff", "webp"];
@@ -61,15 +61,15 @@ impl ProcessSummary {
         println!("  変換後総サイズ     : {:.2} MB", conv_mb);
         if self.total_saved_bytes() >= 0 {
             println!(
-                "  削減量            : {} ({:.1}% 削減)",
+                "  削減量            : {} ({} 削減)",
                 format!("{:.2} MB", saved_mb).bold().green(),
-                self.total_saved_percentage().bold().green()
+                format!("{:.1}%", self.total_saved_percentage()).bold().green()
             );
         } else {
             println!(
-                "  サイズ変化        : {} ({:.1}% 増加)",
+                "  サイズ変化        : {} ({} 増加)",
                 format!("{:.2} MB", -saved_mb).bold().yellow(),
-                -self.total_saved_percentage()
+                format!("{:.1}%", -self.total_saved_percentage()).bold().yellow()
             );
         }
         println!("  総所要時間        : {:.2} 秒", self.elapsed_secs);
@@ -171,7 +171,8 @@ pub fn process_images(config: &ConvertConfig) -> Result<ProcessSummary> {
             Err(err) => {
                 failed_count.fetch_add(1, Ordering::Relaxed);
                 pb.println(format!("{} {:?}: {}", "エラー:".red().bold(), file_path, err));
-            }        }
+            }
+        }
 
         pb.inc(1);
     });
@@ -210,7 +211,7 @@ mod tests {
 
         let sub_dir = dir.path().join("subdir");
         std::fs::create_dir(&sub_dir).unwrap();
-        let file3 = sub_dir.path().join("img3.jpeg");
+        let file3 = sub_dir.join("img3.jpeg");
         File::create(&file3).unwrap();
 
         // フォルダとファイルを混在指定

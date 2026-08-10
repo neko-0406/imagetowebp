@@ -20,15 +20,15 @@ pub struct CliArgs {
     pub quality: u8,
 
     /// Lossless (可逆圧縮) モードを使用
-    #[arg(l, long, default_value_t = false)]
+    #[arg(short = 'l', long, default_value_t = false)]
     pub lossless: bool,
 
     /// 画像の長辺の最大サイズ (ピクセル)。指定した場合、アスペクト比を維持して縮小
-    #[arg(m, long, value_name = "PIXELS")]
+    #[arg(short = 'm', long, value_name = "PIXELS")]
     pub max_dimension: Option<u32>,
 
     /// 既存の WebP ファイルが存在する場合に上書きする
-    #[arg(w, long, default_value_t = false)]
+    #[arg(short = 'w', long, default_value_t = false)]
     pub overwrite: bool,
 }
 
