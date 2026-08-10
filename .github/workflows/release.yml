@@ -1,0 +1,167 @@
+name: Release
+
+# mainへのPush（直接push・PRマージ両方）のみ実行
+# PRのテスト時はリリースしない
+on:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ─────────────────────────────────────────────
+  # テスト: リリース前に全テストが通ることを確認
+  # ─────────────────────────────────────────────
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test --all
+
+  # ─────────────────────────────────────────────
+  # ビルド: Linux / Windows のリリースバイナリを生成
+  # ─────────────────────────────────────────────
+  build:
+    name: Build (${{ matrix.target }})
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary_name: imagetowebp
+            asset_name: imagetowebp-linux-x86_64
+
+          # Windows x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary_name: imagetowebp.exe
+            asset_name: imagetowebp-windows-x86_64.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      # Linux: バイナリを strip して軽量化
+      - name: Strip binary (Linux only)
+        if: runner.os == 'Linux'
+        run: strip target/${{ matrix.target }}/release/${{ matrix.binary_name }}
+
+      # アーティファクトとしてアップロード（次の release ジョブで使用）
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: target/${{ matrix.target }}/release/${{ matrix.binary_name }}
+          retention-days: 1
+
+  # ─────────────────────────────────────────────
+  # リリース: GitHub Release を作成し、バイナリをアタッチ
+  #   - タグ "latest" を常に最新mainのビルドに更新
+  # ─────────────────────────────────────────────
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # リリース作成・タグ更新のために必要
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Cargo.toml からバージョン番号を取得
+      - name: Get version from Cargo.toml
+        id: version
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      # ビルドアーティファクトをすべてダウンロード
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      # artifacts ディレクトリの構造を整形（各サブフォルダのバイナリをフラットに展開）
+      - name: Prepare release assets
+        run: |
+          mkdir -p ./release_assets
+          find ./artifacts -type f -exec cp {} ./release_assets/ \;
+          ls -la ./release_assets/
+
+      # "latest" タグの GitHub Release を作成・更新
+      # - 既存の "latest" リリースがある場合は上書きする
+      # - prerelease: false にすることで「正式リリース」として扱う
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Latest Build (v${{ steps.version.outputs.version }})"
+          body: |
+            ## imagetowebp v${{ steps.version.outputs.version }} — Latest Build
+
+            > このリリースは `main` ブランチへの最新の push から自動生成されます。
+            > コミット: `${{ github.sha }}`
+
+            ### ダウンロードとインストール
+
+            #### Linux (x86_64)
+            ```bash
+            curl -L https://github.com/${{ github.repository }}/releases/download/latest/imagetowebp-linux-x86_64 \
+              -o imagetowebp && chmod +x imagetowebp && sudo mv imagetowebp /usr/local/bin/
+            ```
+
+            #### Windows (x86_64)
+            PowerShell（管理者権限 または ユーザーディレクトリ）で実行:
+            ```powershell
+            Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/latest/imagetowebp-windows-x86_64.exe" `
+              -OutFile "$env:USERPROFILE\imagetowebp.exe"
+            ```
+
+            #### cargo install（ソースからビルド）
+            ```bash
+            cargo install --git https://github.com/${{ github.repository }}
+            ```
+
+            ### 更新方法
+            同じコマンドを再実行するか、`cargo install --git` に `--force` を追加してください。
+
+            ### 対応フォーマット
+            `.jpg`, `.jpeg`, `.png`, `.bmp`, `.tiff` → `.webp`
+          prerelease: false
+          make_latest: true
+          files: ./release_assets/*
